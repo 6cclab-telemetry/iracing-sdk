@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/quimcalpe/iracing-sdk"
+	irsdk "github.com/quimcalpe/iracing-sdk"
 )
 
 var sdk irsdk.IRSDK
@@ -19,7 +19,7 @@ func main() {
 	sdk = irsdk.Init(nil)
 	defer sdk.Close()
 
-	h, err := template.ParseFiles("index.html")
+	h, err := template.ParseFiles("examples\\dashboard\\index.html")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -27,7 +27,7 @@ func main() {
 
 	flag.Parse()
 	log.SetFlags(0)
-	fs := http.FileServer(http.Dir("assets"))
+	fs := http.FileServer(http.Dir("examples\\dashboard\\assets"))
 	http.Handle("/assets/", http.StripPrefix("/assets/", fs))
 	http.HandleFunc("/ws", wsHandler)
 	http.HandleFunc("/", home)

@@ -1,62 +1,45 @@
 package winevents
 
-/*
-#include <windows.h>
-
-HANDLE _OpenEvent(CHAR *event_name) {
-	return OpenEvent(SYNCHRONIZE, FALSE, event_name);
-}
-
-DWORD _WaitForSingleObject(HANDLE h, DWORD timeout) {
-	return WaitForSingleObject(h,timeout);
-}
-
-void _SendNotifyMessage(UINT msgID, int msg, int var1, int var2, int var3) {
- 	SendNotifyMessage(HWND_BROADCAST, msgID, MAKELONG(msg, var1), MAKELONG(var2, var3));
-}
-*/
-import "C"
 import (
-	"log"
+	"syscall"
 	"time"
+
+	log "github.com/sirupsen/logrus"
+	"github.com/winlabs/gowin32/wrappers"
 )
 
-var eventHandle C.HANDLE
+var eventHandle syscall.Handle
 
-func OpenEvent(eventName string) {
-	evt := (*C.CHAR)(C.CString(eventName))
-	eventHandle = C._OpenEvent(evt)
+func OpenEvent(eventName string) error {
+	enPtr, err := syscall.UTF16PtrFromString(eventName)
+	if err != nil {
+		log.Fatalf("Failed to parse eventName %s to UTF16Ptr: %v", eventName, err)
+	}
+
+	eventHandle, err = wrappers.OpenEvent(wrappers.SYNCHRONIZE, false, enPtr)
+	if err != nil {
+		log.Errorf("Failed to open event %s: %v", eventName, err)
+		return err
+	}
+	return nil
 }
 
 func WaitForSingleObject(timeout time.Duration) bool {
-	t0 := time.Now().UnixNano()
-	timeoutInt := int(timeout / time.Millisecond)
-	r := C._WaitForSingleObject(eventHandle, C.DWORD(timeoutInt))
-	if C.GetLastError() != 0 {
-		remainingTimeout := timeoutInt - int((time.Now().UnixNano()-t0)/1000000)
-		if remainingTimeout > 0 {
-			time.Sleep(time.Duration(remainingTimeout) * time.Millisecond)
+	absTimeout := time.Now().Add(timeout)
+	event, err := wrappers.WaitForSingleObject(eventHandle, uint32(timeout.Milliseconds()))
+	if err != nil {
+		log.Errorf("Error wait for single Object: %v", err)
+		if absTimeout.After(time.Now()) {
+			time.Sleep(absTimeout.Sub(time.Now()))
 		}
 		return false
 	}
-	return r == 0
+	log.Debugf("WaitForSingleObject result: %d", event)
+	return event == wrappers.WAIT_OBJECT_0
 }
 
 func BroadcastMsg(msgName string, msg int, p1 int, p2 interface{}, p3 int) bool {
-	var p2Int int
-	switch v := p2.(type) {
-	case int, int8, int16, int32, int64:
-		p2Int = v.(int)
-	case float32, float64:
-		p2Int = (int)(v.(float64) * 65536.0)
-	default:
-		log.Fatal("Second param must be an int or a float")
-	}
-	msgNameChar := (*C.CHAR)(C.CString(msgName))
-	msgID := C.RegisterWindowMessage(msgNameChar)
-	if msgID < 0 {
-		return false
-	}
-	C._SendNotifyMessage(msgID, C.int(msg), C.int(p1), C.int(p2Int), C.int(p3))
-	return true
+	// TODO: implement
+	return false
+
 }
