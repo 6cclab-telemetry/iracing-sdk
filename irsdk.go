@@ -9,77 +9,95 @@ import (
 
 	"gopkg.in/yaml.v2"
 
+	"github.com/blackhogz/iracing-sdk/lib/winevents"
 	"github.com/hidez8891/shm"
-	"github.com/quimcalpe/iracing-sdk/lib/winevents"
 	log "github.com/sirupsen/logrus"
 )
 
-// IRSDK is the main SDK object clients must use
-type IRSDK struct {
-	r             reader
-	h             *header
-	session       Session
-	s             []string
-	tVars         *TelemetryVars
-	lastValidData int64
+// IrSdk is the main SDK object clients must use
+type IrSdk struct {
+	r                   reader
+	h                   *header
+	session             Session
+	s                   []string
+	tVars               *TelemetryVars
+	lastUpdateTimestamp time.Time
 }
 
-func (sdk *IRSDK) WaitForData(timeout time.Duration) bool {
-	if !sdk.IsConnected() {
-		initIRSDK(sdk)
+func (sdk *IrSdk) WaitForData(timeout time.Duration) bool {
+	sdk.readHeader()
+	if !sessionStatusConnected(sdk.h.status) {
+		return false
 	}
-	if winevents.WaitForSingleObject(timeout) {
-		return readVariableValues(sdk)
+	if !winevents.WaitForSingleObject(timeout) {
+		return false
 	}
-	return false
+	sRaw := readSessionData(sdk.r, sdk.h)
+	err := yaml.Unmarshal([]byte(sRaw), &sdk.session)
+	if err != nil {
+		log.Fatalf("Failed to parse session data YAML: %v", err)
+	}
+	sdk.s = strings.Split(sRaw, "\n")
+	sdk.tVars = readVariableHeaders(sdk.r, sdk.h)
+	return readVariableValues(sdk)
 }
 
-func (sdk *IRSDK) GetVar(name string) (variable, error) {
-	if !sessionStatusOK(sdk.h.status) {
-		return variable{}, fmt.Errorf("Session is not active")
-	}
-	sdk.tVars.mux.Lock()
-	if v, ok := sdk.tVars.vars[name]; ok {
-		sdk.tVars.mux.Unlock()
-		return v, nil
-	}
-	sdk.tVars.mux.Unlock()
-	return variable{}, fmt.Errorf("Telemetry variable %q not found", name)
-}
-
-func (sdk *IRSDK) GetSession() Session {
+func (sdk *IrSdk) GetSession() Session {
 	return sdk.session
 }
 
-func (sdk *IRSDK) GetLastVersion() int {
-	if !sessionStatusOK(sdk.h.status) {
-		return -1
-	}
-	sdk.tVars.mux.Lock()
-	last := sdk.tVars.lastVersion
-	sdk.tVars.mux.Unlock()
-	return last
+func (sdk *IrSdk) GetLastVersion() int {
+	return sdk.tVars.lastVersion
 }
 
-func (sdk *IRSDK) GetSessionData(path string) (string, error) {
-	if !sessionStatusOK(sdk.h.status) {
-		return "", fmt.Errorf("Session not connected")
+func (sdk *IrSdk) GetAllVars() map[string]variable {
+	return sdk.tVars.vars
+}
+
+func (sdk *IrSdk) GetVar(name string) (variable, error) {
+	if v, ok := sdk.tVars.vars[name]; ok {
+		return v, nil
 	}
+	return variable{}, fmt.Errorf("Telemetry variable %q not found", name)
+}
+
+func (sdk *IrSdk) GetSessionData(path string) (string, error) {
 	return getSessionDataPath(sdk.s, path)
 }
 
-func (sdk *IRSDK) IsConnected() bool {
-	if sdk.h != nil {
-		if sessionStatusOK(sdk.h.status) && (sdk.lastValidData+connTimeout > time.Now().Unix()) {
-			return true
+// Close clean up sdk resources
+func (sdk *IrSdk) Close() {
+	sdk.r.Close()
+}
+
+// Init creates a SDK instance to operate with
+func Init(r reader) IrSdk {
+	if r == nil {
+		var err error
+		r, err = shm.Open(fileMapName, fileMapSize)
+		if err != nil {
+			log.Fatalf("Failed to open SDK shared memory: %v", err)
 		}
 	}
 
-	return false
+	sdk := IrSdk{r: r}
+	if err := winevents.OpenEvent(dataValidEventName); err != nil {
+		log.Fatal(err)
+	}
+	return sdk
 }
 
-// ExportTo exports current memory data to a file
-func (sdk *IRSDK) ExportIbtTo(fileName string) {
+func (sdk *IrSdk) readHeader() {
+	h := readHeader(sdk.r)
+	sdk.h = &h
+}
+
+func sessionStatusConnected(status int) bool {
+	return (status & stConnected) > 0
+}
+
+// ExportIbtTo exports current memory data to a file
+func (sdk *IrSdk) ExportIbtTo(fileName string) {
 	rbuf := make([]byte, fileMapSize)
 	_, err := sdk.r.ReadAt(rbuf, 0)
 	if err != nil {
@@ -88,61 +106,16 @@ func (sdk *IRSDK) ExportIbtTo(fileName string) {
 	ioutil.WriteFile(fileName, rbuf, 0644)
 }
 
-// ExportTo exports current session yaml data to a file
-func (sdk *IRSDK) ExportSessionTo(fileName string) {
+// ExportSessionTo exports current session yaml data to a file
+func (sdk *IrSdk) ExportSessionTo(fileName string) {
 	y := strings.Join(sdk.s, "\n")
 	ioutil.WriteFile(fileName, []byte(y), 0644)
 }
 
-func (sdk *IRSDK) BroadcastMsg(msg Msg) {
+// BroadcastMsg broadcasts messages
+func (sdk *IrSdk) BroadcastMsg(msg Msg) {
 	if msg.P2 == nil {
 		msg.P2 = 0
 	}
 	winevents.BroadcastMsg(broadcastMsgName, msg.Cmd, msg.P1, msg.P2, msg.P3)
-}
-
-// Close clean up sdk resources
-func (sdk *IRSDK) Close() {
-	sdk.r.Close()
-}
-
-// Init creates a SDK instance to operate with
-func Init(r reader) IRSDK {
-	if r == nil {
-		var err error
-		r, err = shm.Open(fileMapName, fileMapSize)
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
-
-	sdk := IRSDK{r: r, lastValidData: 0}
-	if err := winevents.OpenEvent(dataValidEventName); err != nil {
-		log.Fatal(err)
-	}
-	initIRSDK(&sdk)
-	return sdk
-}
-
-func initIRSDK(sdk *IRSDK) {
-	h := readHeader(sdk.r)
-	sdk.h = &h
-	sdk.s = nil
-	if sdk.tVars != nil {
-		sdk.tVars.vars = nil
-	}
-	if sessionStatusOK(h.status) {
-		sRaw := readSessionData(sdk.r, &h)
-		err := yaml.Unmarshal([]byte(sRaw), &sdk.session)
-		if err != nil {
-			log.Fatal(err)
-		}
-		sdk.s = strings.Split(sRaw, "\n")
-		sdk.tVars = readVariableHeaders(sdk.r, &h)
-		readVariableValues(sdk)
-	}
-}
-
-func sessionStatusOK(status int) bool {
-	return (status & stConnected) > 0
 }

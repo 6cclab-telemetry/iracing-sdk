@@ -1,12 +1,15 @@
 package irsdk
 
-import "io"
+import (
+	"io"
+	"time"
+)
 
 const dataValidEventName string = "Local\\IRSDKDataValidEvent"
 const fileMapName string = "Local\\IRSDKMemMapFileName"
 const fileMapSize int32 = 1164 * 1024
 const broadcastMsgName string = "IRSDK_BROADCASTMSG"
-const connTimeout = 30
+const connTimeout = 30 * time.Second
 
 const (
 	stConnected int = 1

@@ -1,8 +1,6 @@
 package irsdk
 
-import (
-	"log"
-)
+import log "github.com/sirupsen/logrus"
 
 type header struct {
 	version  int
@@ -40,6 +38,6 @@ func readHeader(r reader) header {
 		byte4ToInt(rbuf[32:36]),
 		byte4ToInt(rbuf[36:40]),
 	}
-	//fmt.Printf("%v\n%+v\n", rbuf, h)
+	log.Debugf("%v\n%+v\n", rbuf, h)
 	return h
 }

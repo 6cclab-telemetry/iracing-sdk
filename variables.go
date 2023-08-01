@@ -3,7 +3,6 @@ package irsdk
 import (
 	"fmt"
 	"log"
-	"sync"
 	"time"
 )
 
@@ -49,7 +48,6 @@ func (v variable) String() string {
 type TelemetryVars struct {
 	lastVersion int
 	vars        map[string]variable
-	mux         sync.Mutex
 }
 
 func findLatestBuffer(r reader, h *header) varBuffer {
@@ -99,68 +97,64 @@ func readVariableHeaders(r reader, h *header) *TelemetryVars {
 	return &vars
 }
 
-func readVariableValues(sdk *IRSDK) bool {
-	newData := false
-	if sessionStatusOK(sdk.h.status) {
-		// find latest buffer for variables
-		vb := findLatestBuffer(sdk.r, sdk.h)
-		sdk.tVars.mux.Lock()
-		if sdk.tVars.lastVersion < vb.tickCount {
-			newData = true
-			sdk.tVars.lastVersion = vb.tickCount
-			sdk.lastValidData = time.Now().Unix()
-			for varName, v := range sdk.tVars.vars {
-				var rbuf []byte
-				switch v.varType {
-				case 0:
-					rbuf = make([]byte, 1)
-					_, err := sdk.r.ReadAt(rbuf, int64(vb.bufOffset+v.offset))
-					if err != nil {
-						log.Fatal(err)
-					}
-					v.Value = string(rbuf[0])
-				case 1:
-					rbuf = make([]byte, 1)
-					_, err := sdk.r.ReadAt(rbuf, int64(vb.bufOffset+v.offset))
-					if err != nil {
-						log.Fatal(err)
-					}
-					v.Value = int(rbuf[0]) > 0
-				case 2:
-					rbuf = make([]byte, 4)
-					_, err := sdk.r.ReadAt(rbuf, int64(vb.bufOffset+v.offset))
-					if err != nil {
-						log.Fatal(err)
-					}
-					v.Value = byte4ToInt(rbuf)
-				case 3:
-					rbuf = make([]byte, 4)
-					_, err := sdk.r.ReadAt(rbuf, int64(vb.bufOffset+v.offset))
-					if err != nil {
-						log.Fatal(err)
-					}
-					v.Value = byte4toBitField(rbuf)
-				case 4:
-					rbuf = make([]byte, 4)
-					_, err := sdk.r.ReadAt(rbuf, int64(vb.bufOffset+v.offset))
-					if err != nil {
-						log.Fatal(err)
-					}
-					v.Value = byte4ToFloat(rbuf)
-				case 5:
-					rbuf = make([]byte, 8)
-					_, err := sdk.r.ReadAt(rbuf, int64(vb.bufOffset+v.offset))
-					if err != nil {
-						log.Fatal(err)
-					}
-					v.Value = byte8ToFloat(rbuf)
-				}
-				v.rawBytes = rbuf
-				sdk.tVars.vars[varName] = v
+func readVariableValues(sdk *IrSdk) bool {
+	// find latest buffer for variables
+	vb := findLatestBuffer(sdk.r, sdk.h)
+	if sdk.tVars.lastVersion >= vb.tickCount {
+		return false
+	}
+	sdk.tVars.lastVersion = vb.tickCount
+	sdk.lastUpdateTimestamp = time.Now()
+	for varName, v := range sdk.tVars.vars {
+		// TODO: handle counts
+		var rbuf []byte
+		switch v.varType {
+		case 0:
+			rbuf = make([]byte, 1)
+			_, err := sdk.r.ReadAt(rbuf, int64(vb.bufOffset+v.offset))
+			if err != nil {
+				log.Fatal(err)
 			}
+			v.Value = string(rbuf[0])
+		case 1:
+			rbuf = make([]byte, 1)
+			_, err := sdk.r.ReadAt(rbuf, int64(vb.bufOffset+v.offset))
+			if err != nil {
+				log.Fatal(err)
+			}
+			v.Value = int(rbuf[0]) > 0
+		case 2:
+			rbuf = make([]byte, 4)
+			_, err := sdk.r.ReadAt(rbuf, int64(vb.bufOffset+v.offset))
+			if err != nil {
+				log.Fatal(err)
+			}
+			v.Value = byte4ToInt(rbuf)
+		case 3:
+			rbuf = make([]byte, 4)
+			_, err := sdk.r.ReadAt(rbuf, int64(vb.bufOffset+v.offset))
+			if err != nil {
+				log.Fatal(err)
+			}
+			v.Value = byte4toBitField(rbuf)
+		case 4:
+			rbuf = make([]byte, 4*v.count)
+			_, err := sdk.r.ReadAt(rbuf, int64(vb.bufOffset+v.offset))
+			if err != nil {
+				log.Fatal(err)
+			}
+			v.Value = byte4sToFloats(rbuf)
+		case 5:
+			rbuf = make([]byte, 8)
+			_, err := sdk.r.ReadAt(rbuf, int64(vb.bufOffset+v.offset))
+			if err != nil {
+				log.Fatal(err)
+			}
+			v.Value = byte8ToFloat(rbuf)
 		}
-		sdk.tVars.mux.Unlock()
+		v.rawBytes = rbuf
+		sdk.tVars.vars[varName] = v
 	}
 
-	return newData
+	return true
 }
