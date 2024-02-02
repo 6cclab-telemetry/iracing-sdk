@@ -1,4 +1,4 @@
-module github.com/blackhogz/iracing-sdk
+module github.com/iracing-telemetry-group/iracing-sdk
 
 go 1.20
 

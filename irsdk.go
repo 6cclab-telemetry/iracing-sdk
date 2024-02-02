@@ -9,8 +9,8 @@ import (
 
 	"gopkg.in/yaml.v2"
 
-	"github.com/blackhogz/iracing-sdk/lib/winevents"
 	"github.com/hidez8891/shm"
+	"github.com/iracing-telemetry-group/iracing-sdk/lib/winevents"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -35,7 +35,7 @@ func (sdk *IrSdk) WaitForData(timeout time.Duration) bool {
 	sRaw := readSessionData(sdk.r, sdk.h)
 	err := yaml.Unmarshal([]byte(sRaw), &sdk.session)
 	if err != nil {
-		log.Fatalf("Failed to parse session data YAML: %v", err)
+		log.Debug("Failed to parse session data YAML: %v", err)
 	}
 	sdk.s = strings.Split(sRaw, "\n")
 	sdk.tVars = readVariableHeaders(sdk.r, sdk.h)
