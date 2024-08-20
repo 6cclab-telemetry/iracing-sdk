@@ -11,7 +11,6 @@ require (
 require golang.org/x/sys v0.5.0 // indirect
 
 require (
-	github.com/kylelemons/godebug v1.1.0
 	github.com/shiena/ansicolor v0.0.0-20230509054315-a9deabde6e02
 	github.com/sirupsen/logrus v1.9.3
 )
