@@ -10,6 +10,7 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/hidez8891/shm"
+
 	log "github.com/sirupsen/logrus"
 )
 
@@ -76,6 +77,8 @@ func Init(r reader) IrSdk {
 			log.Fatalf("Failed to open SDK shared memory: %v", err)
 		}
 	}
+
+	sdk := IrSdk{r: r}
 
 	return sdk
 }
