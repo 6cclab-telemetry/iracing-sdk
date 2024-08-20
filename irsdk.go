@@ -10,7 +10,6 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/hidez8891/shm"
-	"github.com/iracing-telemetry-group/iracing-sdk/lib/winevents"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -29,9 +28,7 @@ func (sdk *IrSdk) WaitForData(timeout time.Duration) bool {
 	if !sessionStatusConnected(sdk.h.status) {
 		return false
 	}
-	if !winevents.WaitForSingleObject(timeout) {
-		return false
-	}
+
 	sRaw := readSessionData(sdk.r, sdk.h)
 	err := yaml.Unmarshal([]byte(sRaw), &sdk.session)
 	if err != nil {
@@ -80,10 +77,6 @@ func Init(r reader) IrSdk {
 		}
 	}
 
-	sdk := IrSdk{r: r}
-	if err := winevents.OpenEvent(dataValidEventName); err != nil {
-		log.Fatal(err)
-	}
 	return sdk
 }
 
@@ -110,12 +103,4 @@ func (sdk *IrSdk) ExportIbtTo(fileName string) {
 func (sdk *IrSdk) ExportSessionTo(fileName string) {
 	y := strings.Join(sdk.s, "\n")
 	ioutil.WriteFile(fileName, []byte(y), 0644)
-}
-
-// BroadcastMsg broadcasts messages
-func (sdk *IrSdk) BroadcastMsg(msg Msg) {
-	if msg.P2 == nil {
-		msg.P2 = 0
-	}
-	winevents.BroadcastMsg(broadcastMsgName, msg.Cmd, msg.P1, msg.P2, msg.P3)
 }
