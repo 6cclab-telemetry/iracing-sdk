@@ -9,8 +9,6 @@ import (
 
 	"gopkg.in/yaml.v2"
 
-	"github.com/hidez8891/shm"
-
 	log "github.com/sirupsen/logrus"
 )
 
@@ -70,13 +68,6 @@ func (sdk *IrSdk) Close() {
 
 // Init creates a SDK instance to operate with
 func Init(r reader) IrSdk {
-	if r == nil {
-		var err error
-		r, err = shm.Open(fileMapName, fileMapSize)
-		if err != nil {
-			log.Fatalf("Failed to open SDK shared memory: %v", err)
-		}
-	}
 
 	sdk := IrSdk{r: r}
 
